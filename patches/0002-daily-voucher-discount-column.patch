@@ -1,0 +1,87 @@
+diff --git a/components/Franchise.jsx b/components/Franchise.jsx
+index 6ad614d..d6c9111 100644
+--- a/components/Franchise.jsx
++++ b/components/Franchise.jsx
+@@ -88,6 +88,14 @@ const EXPENSE_OPTIONAL_COLS = [
+ ];
+ const hasValue = (v) => v !== null && v !== undefined && String(v).trim() !== '';
+ 
++/* คำที่นับว่าเป็น "voucher" — แต่ละร้านพิมพ์ไม่เหมือนกัน (อังกฤษ/ทับศัพท์/คูปอง)
++   ใช้จับทั้งชื่อวิธีจ่าย หมายเหตุบิล และข้อความในประวัติออเดอร์ */
++const VOUCHER_RE = /voucher|วอยเชอร์|เวาเชอร์|เวาว์เชอร์|คูปอง/i;
++
++/* ช่องข้อความของบิลที่อาจมีคำว่า voucher อยู่ — ฐาน Aoringo ไม่มีคอลัมน์ "ชื่อส่วนลด" ให้ตรง ๆ
++   ร้านจึงมักพิมพ์ไว้ที่หมายเหตุบิลหรือชื่อวิธีจ่าย (อีกทางคือ log ไว้ในประวัติออเดอร์) */
++const BILL_TEXT_FIELDS = ['note', 'paidType', 'status', 'orderType'];
++
+ /* ช่องของ "ประวัติออเดอร์" ที่มีก็โชว์ ไม่มีก็ซ่อน — ตาราง OrderActivity แต่ละเวอร์ชันเก็บไม่เท่ากัน
+    (บางที่ log แค่ประเภท+ข้อความ บางที่ log เมนู/จำนวน/ยอดของทุกความเคลื่อนไหวด้วย)
+    ถ้าโชว์หมดทุกช่องจะได้คอลัมน์ขีดกลางเปล่า ๆ เต็มไปหมด */
+@@ -120,6 +128,9 @@ const FC_DAILY_FIXED_HEAD = [
+   { key: 'typeDelivery', label: 'Delivery', type: 'money', drill: 'typeDelivery' },
+   { key: 'serviceChg', label: 'Service Charge', type: 'money' },
+   { key: 'discount', label: 'ส่วนลด', type: 'money' },
++  // ส่วนลดเฉพาะส่วนที่เป็น voucher — แยกออกมาให้เห็นว่าในช่อง "ส่วนลด" ข้างซ้ายเป็น voucher เท่าไร
++  // (เป็นส่วนย่อยของส่วนลด ไม่ใช่ยอดเพิ่ม จึงไม่ถูกบวกเข้า Net/Gross ซ้ำ)
++  { key: 'voucherDiscount', label: 'Voucher (ส่วนลด)', type: 'money', drill: 'voucherDiscount' },
+   { key: 'netSales', label: 'Net Sales', type: 'money', tone: 'emerald' },
+   { key: 'vat', label: 'Vat', type: 'money', tone: 'muted' },
+   { key: 'grossSales', label: 'Gross Sales', type: 'money', tone: 'brand', drill: 'all' },
+@@ -261,6 +272,22 @@ export default function Franchise({ view = 'fcDashboard' }) {
+   // ประวัติออเดอร์ไม่กรองบิลที่ยกเลิกออก — "ยกเลิกเมื่อไหร่ ใครยกเลิก" คือสิ่งที่คนเปิดหน้านี้มาหา
+   const activities = useMemo(() => data?.activities || [], [data]);
+ 
++  /* บิลที่ "มีคำว่า voucher" — ดูจากข้อความของตัวบิลเอง และจากประวัติออเดอร์ของบิลนั้น
++     (ร้านที่บันทึกส่วนลด voucher ไว้ใน OrderActivity จะจับได้จากทางหลัง) */
++  const voucherCheckIds = useMemo(() => {
++    const ids = new Set();
++    activities.forEach((a) => {
++      if (VOUCHER_RE.test(`${str(a.activityType)} ${str(a.detail)}`)) ids.add(str(a.checkId));
++    });
++    return ids;
++  }, [activities]);
++
++  const isVoucherBill = useCallback(
++    (b) => VOUCHER_RE.test(BILL_TEXT_FIELDS.map((k) => str(b[k])).join(' '))
++      || (str(b.checkId) !== '' && voucherCheckIds.has(str(b.checkId))),
++    [voucherCheckIds]
++  );
++
+   const summary = useMemo(() => {
+     const sales = bills.reduce((s, b) => s + billAmount(b), 0);
+     const cover = bills.reduce((s, b) => s + num(b.cover), 0);
+@@ -283,6 +310,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
+   const daily = useMemo(() => {
+     const blank = (d) => ({
+       date: d, billCount: 0, cover: 0, sales: 0, vat: 0, discount: 0, serviceChg: 0,
++      voucherDiscount: 0,
+       typeDineIn: 0, typeTakeHome: 0, typeDelivery: 0,
+       ...Object.fromEntries(CHANNELS.map((c) => [c.key, 0])),
+     });
+@@ -298,6 +326,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
+       row.sales += amt;
+       row.vat += num(b.vat);
+       row.discount += num(b.discount);
++      if (isVoucherBill(b)) row.voucherDiscount += num(b.discount);
+       row.serviceChg += num(b.serviceChg);
+       // Dine-in / Take-Home / Delivery = ยอด "ก่อน VAT" ของบิลนั้น — แบบเดียวกับตาราง "ยอดรายวัน"
+       // ของเมนู ACC (pages/index.js: net = billTotal - vat แล้ว netSales = dineIn + takeHome + delivery)
+@@ -330,7 +359,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
+         };
+       })
+       .sort((a, b) => a.date.localeCompare(b.date));
+-  }, [bills, expenses]);
++  }, [bills, expenses, isVoucherBill]);
+ 
+   /** ช่องทางชำระเงินที่ฐานนี้มีข้อมูลจริง — ช่องที่เป็น 0 ทั้งคอลัมน์ไม่ต้องเอามารก */
+   const channelTotals = useMemo(() => {
+@@ -660,6 +689,9 @@ export default function Franchise({ view = 'fcDashboard' }) {
+       fn = (b) => sameDay(b) && num(b[key]) > 0;
+     } else if (['typeDineIn', 'typeTakeHome', 'typeDelivery'].includes(colDef.drill)) {
+       fn = (b) => sameDay(b) && orderBucket(b) === colDef.drill;
++    } else if (colDef.drill === 'voucherDiscount') {
++      // เอาเฉพาะบิลที่มีส่วนลดจริง ไม่งั้นบิลที่พิมพ์คำว่า voucher ไว้เฉย ๆ (ส่วนลด 0) จะโผล่มาด้วย
++      fn = (b) => sameDay(b) && isVoucherBill(b) && num(b.discount) !== 0;
+     } else {
+       title = `บิลทั้งหมด · ${row.date}`;
+     }

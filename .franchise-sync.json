@@ -3,7 +3,7 @@
   "ref": "main",
   "commit": null,
   "commitDate": null,
-  "syncedAt": "2026-09-07T13:30:25.395Z",
+  "syncedAt": "2026-09-07T13:44:39.347Z",
   "files": [
     "components/Franchise.jsx",
     "pages/api/franchise.js",
@@ -15,6 +15,7 @@
     "docs/franchise-aoringo.md"
   ],
   "patches": [
-    "0001-daily-type-columns-before-vat.patch"
+    "0001-daily-type-columns-before-vat.patch",
+    "0002-daily-voucher-discount-column.patch"
   ]
 }
