@@ -1,0 +1,81 @@
+# ดึงเมนูเฟรนไชส์จากต้นทาง naraipizzeria มาลงรีโปนี้ แล้วเปิด PR ให้รีวิว
+#
+# ทำงานอัตโนมัติทุกเช้า และกดสั่งเองได้ที่แท็บ Actions (Run workflow)
+# ไม่ merge ให้เอง — เปิด PR ทิ้งไว้ให้คนดูก่อนเสมอ เพราะต้นทางอาจเพิ่มหน้าย่อยใหม่
+# ที่ต้องไปแก้ MENU ใน pages/index.js ตามด้วย (สคริปต์จะเตือนไว้ใน log)
+name: sync เมนูเฟรนไชส์จากต้นทาง
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 08:00 ตามเวลาไทย ทุกวัน
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-franchise
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: ดึงไฟล์จากต้นทาง
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/sync-franchise.mjs pull
+
+      - name: มีอะไรเปลี่ยนไหม
+        id: diff
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "ตรงกับต้นทางอยู่แล้ว ไม่ต้องทำอะไร"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff --stat
+          fi
+
+      # ของใหม่จากต้นทางต้อง build ผ่านก่อนถึงจะเปิด PR — ไม่งั้นได้ PR ที่พังมาให้รีวิว
+      - name: ติดตั้ง dependency + build
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          npm ci
+          npm run build
+
+      - name: เปิด PR
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="sync/franchise-$(date -u +%Y%m%d-%H%M)"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit \
+            -m "sync: ดึงเมนูเฟรนไชส์จาก naraipizzeria มาอัปเดต" \
+            -m "ไฟล์ที่ยกมาจากต้นทางถูกทับด้วยเวอร์ชันล่าสุด — ดู .franchise-sync.json ว่าตรงกับ commit ไหน" \
+            -m "build ผ่านแล้วใน workflow นี้"
+          git push -u origin "$BRANCH"
+          {
+            echo "อัตโนมัติจาก \`.github/workflows/sync-franchise.yml\`"
+            echo
+            echo "ดึงไฟล์เมนูเฟรนไชส์จาก [naraipizzeria](https://github.com/nookmagazineDev/naraipizzeria) มาทับ · \`npm run build\` ผ่านแล้ว"
+            echo
+            echo "ถ้าต้นทางเพิ่ม/ลบหน้าย่อย ต้องไปแก้ \`MENU\` ใน \`pages/index.js\` เอง — ดูใน log ของ workflow ว่ามีคำเตือนไหม"
+          } > /tmp/pr-body.md
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "sync: อัปเดตเมนูเฟรนไชส์จาก naraipizzeria" \
+            --body-file /tmp/pr-body.md

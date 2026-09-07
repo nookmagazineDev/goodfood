@@ -1,0 +1,17 @@
+{
+  "upstream": "nookmagazineDev/naraipizzeria",
+  "ref": "main",
+  "commit": "1888c1b55eb8072533959001ee2472df3c15130a",
+  "commitDate": "2026-09-07T07:58:56+00:00",
+  "syncedAt": "2026-09-07T08:12:22.186Z",
+  "files": [
+    "components/Franchise.jsx",
+    "pages/api/franchise.js",
+    "lib/aoringoSource.js",
+    "lib/aoringoPool.js",
+    "lib/aoringoSql.mjs",
+    "lib/directRoute.js",
+    "host-server/aoringo-db.js",
+    "docs/franchise-aoringo.md"
+  ]
+}
