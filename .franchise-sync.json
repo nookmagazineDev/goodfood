@@ -1,9 +1,9 @@
 {
   "upstream": "nookmagazineDev/naraipizzeria",
   "ref": "main",
-  "commit": "1888c1b55eb8072533959001ee2472df3c15130a",
-  "commitDate": "2026-09-07T07:58:56+00:00",
-  "syncedAt": "2026-09-07T08:12:22.186Z",
+  "commit": null,
+  "commitDate": null,
+  "syncedAt": "2026-09-07T13:30:25.395Z",
   "files": [
     "components/Franchise.jsx",
     "pages/api/franchise.js",
@@ -13,5 +13,8 @@
     "lib/directRoute.js",
     "host-server/aoringo-db.js",
     "docs/franchise-aoringo.md"
+  ],
+  "patches": [
+    "0001-daily-type-columns-before-vat.patch"
   ]
 }

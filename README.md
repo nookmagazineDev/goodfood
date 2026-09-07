@@ -50,7 +50,7 @@ npm run build && npm start
 
 | กอง | ไฟล์ | ใครแก้ |
 |---|---|---|
-| **ยกมาจากต้นทาง** (เหมือนกันทุกตัวอักษร) | `components/Franchise.jsx` · `pages/api/franchise.js` · `lib/aoringo*.js/.mjs` · `lib/directRoute.js` · `host-server/aoringo-db.js` · `docs/franchise-aoringo.md` | แก้ที่ต้นทาง แล้ว sync ลงมา |
+| **ยกมาจากต้นทาง** (เหมือนกันทุกตัวอักษร) | `components/Franchise.jsx` · `pages/api/franchise.js` · `lib/aoringo*.js/.mjs` · `lib/directRoute.js` · `host-server/aoringo-db.js` · `docs/franchise-aoringo.md` | แก้ที่ต้นทาง แล้ว sync ลงมา (จำเป็นต้องแก้ที่นี่ ใช้ `patches/`) |
 | **ของรีโปนี้เอง** (ไม่เคยถูกทับ) | `pages/index.js` · `tailwind.config.js` · `styles/globals.css` · `host-server/server.js` · `README.md` | แก้ที่นี่ได้เลย |
 
 ที่ต้องเหมือนกันทุกตัวอักษรเพราะเวลา sync จะได้ทับลงไปตรง ๆ ไม่มี conflict ให้ต้องนั่งแก้มือ
@@ -72,6 +72,38 @@ node scripts/sync-franchise.mjs pull    # ดึงของใหม่มา�
 ```
 
 เพิ่มไฟล์ที่ต้อง sync ได้ที่ตัวแปร `SHARED` ใน `scripts/sync-franchise.mjs` ที่เดียว
+
+### แก้บั๊กในไฟล์ของต้นทาง — `patches/`
+
+ไฟล์กองแรกถูกทับทุกครั้งที่ sync ถ้าแก้ตรง ๆ ของที่แก้จะหาย จึงเก็บเป็นไฟล์ `.patch` ไว้ใน
+`patches/` แทน สคริปต์ sync จะ apply ทับให้เสมอหลังดึงของใหม่มา ("เป้าหมาย" ของไฟล์
+คือ **ต้นทางล่าสุด + patch ทั้งหมด** ทั้งโหมด `check` และ `pull` เทียบกับตัวนี้)
+
+```bash
+# แก้ไฟล์ตามปกติ แล้วเก็บเป็น patch
+git diff components/Franchise.jsx > patches/0002-ชื่อสั้น ๆ.patch
+git checkout components/Franchise.jsx   # คืนไฟล์ให้เป็นของต้นทาง
+node scripts/sync-franchise.mjs pull    # แล้วให้สคริปต์ apply ให้ (พิสูจน์ว่า patch ใช้ได้จริง)
+```
+
+ตั้งชื่อขึ้นต้นด้วยตัวเลขเพื่อคุมลำดับการ apply
+
+**patch ที่มีอยู่ตอนนี้**
+
+| ไฟล์ | แก้อะไร |
+|---|---|
+| `0001-daily-type-columns-before-vat.patch` | คอลัมน์ Dine-in / Take-Home / Delivery ในหน้า "ยอดขายรายวัน" ให้เป็นยอด**ก่อน VAT** ผลรวมสามช่องจะเท่ากับ Net Sales พอดี — ตรงกับตาราง "ยอดรายวัน" ของเมนู ACC ที่ต้นทางใช้ (`net = billTotal - vat` แล้ว `netSales = dineIn + takeHome + delivery`) ของเดิมบวกยอดรวม VAT เข้าไป สามช่องเลยไปเท่ากับ Gross Sales แทน |
+
+patch ทุกไฟล์ควรส่งไปเปิด PR ที่ต้นทางด้วย — ไฟล์ใน `patches/` apply กับรีโป naraipizzeria
+ได้ตรง ๆ เพราะไฟล์กองแรกเหมือนกันทุกตัวอักษร:
+
+```bash
+cd /path/to/naraipizzeria
+git apply /path/to/goodfood/patches/0001-daily-type-columns-before-vat.patch
+```
+
+พอต้นทาง merge แล้ว patch จะ apply ไม่ผ่าน สคริปต์จะขึ้นเตือนพร้อมบอกให้ลบไฟล์ patch ทิ้ง
+(และ workflow จะ fail ให้เห็น ไม่ปล่อยผ่านเงียบ ๆ)
 
 ### ถ้าต้นทางเพิ่มหน้าย่อยใหม่
 
@@ -105,5 +137,6 @@ lib/aoringoSql.mjs        ตรรกะจับคู่ตาราง/ค�
 lib/directRoute.js        ตัวรู้จำ error แบบ "ไปไม่ถึงเครื่อง" + จำว่าเพิ่งต่อไม่ติด
 host-server/              host API ทางถอย (รันบนเครื่องที่มองเห็น SQL Server)
 scripts/sync-franchise.mjs  ดึงเมนูเฟรนไชส์จากต้นทางมาอัปเดต (check | pull)
-.franchise-sync.json      ตอนนี้ตรงกับต้นทาง commit ไหน
+patches/                  ที่รีโปนี้แก้ทับของต้นทางไว้ — apply ทับให้ทุกครั้งหลัง sync
+.franchise-sync.json      ตอนนี้ตรงกับต้นทาง commit ไหน + มี patch อะไรบ้าง
 ```

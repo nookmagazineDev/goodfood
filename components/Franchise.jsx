@@ -299,7 +299,10 @@ export default function Franchise({ view = 'fcDashboard' }) {
       row.vat += num(b.vat);
       row.discount += num(b.discount);
       row.serviceChg += num(b.serviceChg);
-      row[orderBucket(b)] += amt;            // Dine-in / Take-Home / Delivery แบบเดียวกับ ACC
+      // Dine-in / Take-Home / Delivery = ยอด "ก่อน VAT" ของบิลนั้น — แบบเดียวกับตาราง "ยอดรายวัน"
+      // ของเมนู ACC (pages/index.js: net = billTotal - vat แล้ว netSales = dineIn + takeHome + delivery)
+      // บิลหนึ่งลงถังเดียว จึงหัก VAT ของบิลนั้นตรง ๆ ได้ ไม่ต้องเฉลี่ย และผลรวมสามช่อง = Net Sales พอดี
+      row[orderBucket(b)] += amt - num(b.vat);
       CHANNELS.forEach((c) => { row[c.key] += num(b[c.key]); });
     });
     const expByDay = new Map();
