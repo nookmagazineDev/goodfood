@@ -127,10 +127,10 @@ const FC_DAILY_FIXED_HEAD = [
   { key: 'typeTakeHome', label: 'Take-Home', type: 'money', drill: 'typeTakeHome' },
   { key: 'typeDelivery', label: 'Delivery', type: 'money', drill: 'typeDelivery' },
   { key: 'serviceChg', label: 'Service Charge', type: 'money' },
+  // ช่อง "ส่วนลด" นับเฉพาะส่วนลดที่ไม่ใช่ voucher — voucher แยกไปอยู่ช่องถัดไปของตัวเอง
+  // สองช่องนี้ไม่ทับกัน บวกกันแล้วได้ส่วนลดทั้งหมด และไม่มีช่องไหนถูกบวกเข้า Net/Gross
   { key: 'discount', label: 'ส่วนลด', type: 'money' },
-  // ส่วนลดเฉพาะส่วนที่เป็น voucher — แยกออกมาให้เห็นว่าในช่อง "ส่วนลด" ข้างซ้ายเป็น voucher เท่าไร
-  // (เป็นส่วนย่อยของส่วนลด ไม่ใช่ยอดเพิ่ม จึงไม่ถูกบวกเข้า Net/Gross ซ้ำ)
-  { key: 'voucherDiscount', label: 'Voucher (ส่วนลด)', type: 'money', drill: 'voucherDiscount' },
+  { key: 'voucherDiscount', label: 'Voucher', type: 'money', drill: 'voucherDiscount' },
   { key: 'netSales', label: 'Net Sales', type: 'money', tone: 'emerald' },
   { key: 'vat', label: 'Vat', type: 'money', tone: 'muted' },
   { key: 'grossSales', label: 'Gross Sales', type: 'money', tone: 'brand', drill: 'all' },
@@ -325,8 +325,10 @@ export default function Franchise({ view = 'fcDashboard' }) {
       row.cover += num(b.cover);
       row.sales += amt;
       row.vat += num(b.vat);
-      row.discount += num(b.discount);
+      // voucher แยกไปอยู่ช่องของตัวเอง ไม่นับซ้ำในช่อง "ส่วนลด"
+      // (ช่อง "ส่วนลด" + ช่อง "Voucher" = ส่วนลดทั้งหมดของวันนั้น)
       if (isVoucherBill(b)) row.voucherDiscount += num(b.discount);
+      else row.discount += num(b.discount);
       row.serviceChg += num(b.serviceChg);
       // Dine-in / Take-Home / Delivery = ยอด "ก่อน VAT" ของบิลนั้น — แบบเดียวกับตาราง "ยอดรายวัน"
       // ของเมนู ACC (pages/index.js: net = billTotal - vat แล้ว netSales = dineIn + takeHome + delivery)
