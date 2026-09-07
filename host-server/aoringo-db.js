@@ -1,9 +1,9 @@
 // ════════════════════════════════════════════════════════════
-//  ร้านเฟรนไชส์ — ฐาน "Aoringo" บน SQL Server (ค่าเริ่มต้น 203.154.185.48)
+//  ร้านเฟรนไชส์ — ฐาน "Aoringo" บน SQL Server เครื่องเดียวกัน (203.154.185.48)
 //
-//  ทางถอยของเว็บ สำหรับตอนที่ฝั่งเว็บต่อ SQL ตรงไม่ติด
-//  (ที่ร้านเปิดไฟร์วอลล์ให้เฉพาะ IP ในไทย เว็บที่ deploy ต่างประเทศจึงต่อตรงไม่ติดเป็นปกติ)
-//  ตรรกะการจับคู่ตาราง/คอลัมน์เป็นไฟล์เดียวกับฝั่งเว็บ: lib/aoringoSql.mjs
+//  ทางถอยของหน้าเมนู "เฟรนไชส์" สำหรับตอนที่ Vercel ต่อ SQL ตรงไม่ติด
+//  (ที่ร้านเปิดไฟร์วอลล์ให้เฉพาะ IP ในไทย — ปัญหาเดียวกับ /sheets/* และ /qcrd/*)
+//  ตรรกะการจับคู่ตาราง/คอลัมน์เป็นไฟล์เดียวกับฝั่ง Vercel: lib/aoringoSql.mjs
 //
 //  endpoint (อ่านอย่างเดียว — เมนูนี้ไม่มีฝั่งเขียน จึงไม่ต้องมีกุญแจ)
 //    GET /aoringo/ping                                  ต่อฐานได้ไหม + จับคู่ตารางได้อะไรบ้าง
@@ -11,14 +11,14 @@
 //    GET /aoringo/sales?start=YYYY-MM-DD&end=YYYY-MM-DD   บิลขาย
 //    GET /aoringo/detail?start=…&end=…                    รายการสินค้าในบิล
 //    GET /aoringo/expense?start=…&end=…                   รายจ่าย
+//    GET /aoringo/activity?start=…&end=…                  ประวัติออเดอร์ (OrderActivity)
 //
 //  ตั้งค่าเชื่อมต่อ (ไม่ตั้ง = ใช้ค่าเดียวกับ QC/RD แต่เปลี่ยนฐานเป็น Aoringo):
 //    AORINGO_DB_SERVER · AORINGO_DB_NAME (ค่าเริ่มต้น Aoringo) · AORINGO_DB_USER/PASSWORD
-//  (ไม่ตั้ง = ใช้ค่าเดียวกับ QCRD_DB_* / DB_* ที่เครื่องนั้นตั้งไว้แล้ว)
 // ════════════════════════════════════════════════════════════
 const sql = require('mssql');
 
-// ── ต่อฐาน Aoringo ──
+// ── ต่อฐาน Aoringo (เครื่องเดียวกับ NaraiPos/InventoryNarai แต่คนละฐานข้อมูล) ──
 const RAW_SERVER = process.env.AORINGO_DB_SERVER || process.env.QCRD_DB_SERVER ||
   process.env.DB_SERVER || 'localhost\\SQLEXPRESS';
 const [aHost, aInstance] = RAW_SERVER.split('\\');
@@ -32,7 +32,7 @@ const aoringoConfig = {
     encrypt: false,
     trustServerCertificate: true,
     enableArithAbort: true,
-    useUTC: true,          // คืน datetime ตรงตามค่าที่เก็บ (ตรงกับที่ฝั่งเว็บอ่านได้)
+    useUTC: true,          // คืน datetime ตรงตามค่าที่เก็บ (ตรงกับที่ฝั่ง Vercel อ่านได้)
     ...(aInstance ? { instanceName: aInstance } : {}),
   },
   pool: { max: 4, min: 0, idleTimeoutMillis: 30000 },
@@ -62,7 +62,7 @@ async function q(text, params = {}) {
   return r.recordset || [];
 }
 
-// ตรรกะชุดเดียวกับฝั่งเว็บ — โหลดแบบ dynamic import เพราะเป็นไฟล์ ESM (.mjs) ใน CommonJS
+// ตรรกะชุดเดียวกับฝั่ง Vercel — โหลดแบบ dynamic import เพราะเป็นไฟล์ ESM (.mjs) ใน CommonJS
 let corePromise = null;
 function getCore() {
   if (!corePromise) {
@@ -104,6 +104,9 @@ function mountAoringo(app) {
 
   app.get('/aoringo/expense', (req, res) =>
     send(res, getCore().then(c => c.readExpenses(range(req))), 'expense'));
+
+  app.get('/aoringo/activity', (req, res) =>
+    send(res, getCore().then(c => c.readActivities(range(req))), 'activity'));
 }
 
 module.exports = { mountAoringo };
