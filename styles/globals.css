@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap');
+
+body {
+  font-family: 'Inter', 'Noto Sans Thai', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #f6faf8;   /* พื้นหลังอมเขียวจาง ๆ ตาม CI */
+  color: #0f172a;
+}
+
+/* แถบเลื่อน — หัวแถบเป็นสีเขียวจาง ให้เข้ากับ CI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #a7f3d0;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #34d399;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* บิลที่ถูกยกเลิก — ขีดฆ่าทั้งแถว */
+tr.row-void td {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+/* ===== ล็อกหัวตาราง + คอลัมน์แรก (ตารางกว้าง/ยาวของทุกหน้าย่อย) ===== */
+.lock-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: #ecfdf5;
+}
+.lock-table tbody td:first-child,
+.lock-table tfoot td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background-color: #ffffff;
+}
+.lock-table thead th:first-child {
+  left: 0;
+  z-index: 30;
+}
+
+/* ===== สั่งพิมพ์รายงาน =====
+   หน้าเว็บเป็นแอปเต็มจอ (เมนูซ้าย + หัวเว็บ + กล่องเนื้อหาที่เลื่อนเอง) พอสั่งพิมพ์แล้ว
+   จะได้กระดาษแผ่นเดียวเท่าที่เห็นบนจอ ตรงนี้จึงจัดใหม่ตอนพิมพ์:
+     .no-print     ส่วนที่ไม่เอาไปพิมพ์ (เมนู หัวเว็บ ปุ่ม)
+     .print-reset  กล่องโครงหน้าที่ล็อกความสูงไว้ — คลายออกให้ยาวได้ตามเนื้อหา
+     .print-area   กล่องที่จะออกกระดาษ */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-reset {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .print-area {
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  .print-area .print-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .print-area table {
+    min-width: 0 !important;
+    width: 100% !important;
+    font-size: 8px;
+    table-layout: auto;
+  }
+  .print-area th,
+  .print-area td {
+    position: static !important;
+    padding: 1px 2px !important;
+    border: 0.5px solid #cbd5e1 !important;
+    white-space: normal !important;
+  }
+  .print-area tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .print-area thead {
+    display: table-header-group;
+  }
+}
