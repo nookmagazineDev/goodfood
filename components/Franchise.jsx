@@ -88,6 +88,30 @@ const EXPENSE_OPTIONAL_COLS = [
 ];
 const hasValue = (v) => v !== null && v !== undefined && String(v).trim() !== '';
 
+/* คำที่ฝั่ง SQL ใช้จัดวิธีจ่ายเข้าถัง 6 ถังข้างบน (ต้องตรงกับ PAY_BUCKETS ใน lib/aoringoSql.mjs)
+   ใช้เช็กว่าชื่อวิธีจ่ายของบิลเป็นถังที่รู้จักอยู่แล้วหรือเป็นของใหม่ที่ POS เพิ่งเพิ่มมา */
+const KNOWN_PAY_RE = /cash|เงินสด|qr|promptpay|transfer|โอน|พร้อมเพย์|credit|card|บัตร|voucher|คูปอง|grab|line ?man|delivery|shopee|robinhood|panda/i;
+
+/* ยอดของบิลที่ไม่ได้ลงช่องทางจ่ายที่รู้จักสักช่อง
+   POS เพิ่มวิธีจ่ายใหม่ ฝั่ง SQL จัดไม่เข้าถังไหน ยอดก้อนนั้นจะหายไปจากตาราง
+   (อาการคือ Total Sales น้อยกว่า Gross Sales) จึงดึงกลับมาตั้งเป็นคอลัมน์ของตัวเอง
+   ชื่อคอลัมน์ = ชื่อวิธีจ่ายที่ POS บันทึกไว้จริง (b.paidType)
+
+   บิลที่จ่ายหลายวิธีปนกัน paidType เก็บได้ชื่อเดียว บอกไม่ได้ว่าส่วนที่เหลือคือวิธีไหน
+   ถ้าชื่อนั้นเป็นถังที่รู้จักอยู่แล้วจึงลงเป็น "อื่นๆ" แทนที่จะเดาผิดไปทับชื่อถังเดิม */
+const EXTRA_PAY_OTHER = 'อื่นๆ';
+const extraPayOf = (b) => {
+  const known = CHANNELS.reduce((s, c) => s + num(b[c.key]), 0);
+  const rest = billAmount(b) - known;
+  if (rest <= 0.005) return null;
+  const name = str(b.paidType);
+  return { name: name && !KNOWN_PAY_RE.test(name) ? name : EXTRA_PAY_OTHER, amount: rest };
+};
+
+/* จำนวนคอลัมน์วิธีจ่ายใหม่ที่ยอมให้โผล่ — paidType เป็นข้อความอิสระ ฐานที่กรอกมั่วจะทำให้
+   ตารางบานเป็นร้อยคอลัมน์ เกินจากนี้ยุบรวมเป็น "อื่นๆ" ช่องเดียว */
+const EXTRA_PAY_MAX = 12;
+
 /* คำที่นับว่าเป็น "voucher" — แต่ละร้านพิมพ์ไม่เหมือนกัน (อังกฤษ/ทับศัพท์/คูปอง)
    ใช้จับทั้งชื่อวิธีจ่าย หมายเหตุบิล และข้อความในประวัติออเดอร์ */
 const VOUCHER_RE = /voucher|วอยเชอร์|เวาเชอร์|เวาว์เชอร์|คูปอง/i;
@@ -306,6 +330,29 @@ export default function Franchise({ view = 'fcDashboard' }) {
     };
   }, [bills, items, expenses]);
 
+  /* วิธีจ่ายที่ POS เพิ่มใหม่แล้วฝั่ง SQL ยังไม่มีถังรองรับ — ตั้งเป็นคอลัมน์ตามชื่อที่บันทึกมาจริง
+     เรียงจากยอดมากไปน้อย ตัวที่เกินเพดานยุบรวมเป็น "อื่นๆ" ช่องเดียว */
+  const extraChannels = useMemo(() => {
+    const byName = new Map();
+    bills.forEach((b) => {
+      const x = extraPayOf(b);
+      if (x) byName.set(x.name, (byName.get(x.name) || 0) + x.amount);
+    });
+    const sorted = [...byName.entries()].sort((a, b) => b[1] - a[1]);
+    const keep = sorted.slice(0, EXTRA_PAY_MAX).map(([name]) => name);
+    // เกินเพดาน → ชื่อที่เหลือถูกยุบเป็น "อื่นๆ" ซึ่งต้องมีช่องรองรับด้วย
+    if (sorted.length > EXTRA_PAY_MAX && !keep.includes(EXTRA_PAY_OTHER)) keep.push(EXTRA_PAY_OTHER);
+    return keep.map((name) => ({ key: `pay:${name}`, label: name }));
+  }, [bills]);
+
+  /** ชื่อคอลัมน์ที่ยอดตกถังของบิลนี้ควรไปลง (เกินเพดานแล้วยุบเป็น "อื่นๆ") */
+  const extraKeyOf = useCallback((b) => {
+    const x = extraPayOf(b);
+    if (!x) return null;
+    const key = `pay:${x.name}`;
+    return { key: extraChannels.some((c) => c.key === key) ? key : `pay:${EXTRA_PAY_OTHER}`, amount: x.amount };
+  }, [extraChannels]);
+
   /** ยอดรายวัน — ตัวตั้งของทั้งหน้า "ยอดขายรายวัน" และกราฟบนแดชบอร์ด */
   const daily = useMemo(() => {
     const blank = (d) => ({
@@ -313,6 +360,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
       voucherDiscount: 0,
       typeDineIn: 0, typeTakeHome: 0, typeDelivery: 0,
       ...Object.fromEntries(CHANNELS.map((c) => [c.key, 0])),
+      ...Object.fromEntries(extraChannels.map((c) => [c.key, 0])),
     });
     const map = new Map();
     bills.forEach((b) => {
@@ -335,6 +383,8 @@ export default function Franchise({ view = 'fcDashboard' }) {
       // บิลหนึ่งลงถังเดียว จึงหัก VAT ของบิลนั้นตรง ๆ ได้ ไม่ต้องเฉลี่ย และผลรวมสามช่อง = Net Sales พอดี
       row[orderBucket(b)] += amt - num(b.vat);
       CHANNELS.forEach((c) => { row[c.key] += num(b[c.key]); });
+      const extra = extraKeyOf(b);
+      if (extra) row[extra.key] += extra.amount;
     });
     const expByDay = new Map();
     expenses.forEach((e) => {
@@ -349,7 +399,8 @@ export default function Franchise({ view = 'fcDashboard' }) {
       .map((r) => {
         // ยอดที่เก็บเงินได้จริงจากทุกช่องทาง — ACC เรียกช่องนี้ว่า Total Sales และใช้เทียบกับ Gross
         // ฐานไหนไม่มีตารางการชำระเงินให้ตกมาใช้ยอดบิล จะได้ไม่เห็นเป็น 0 ทั้งคอลัมน์
-        const channelSum = CHANNELS.reduce((s, c) => s + num(r[c.key]), 0);
+        const channelSum = CHANNELS.reduce((s, c) => s + num(r[c.key]), 0)
+          + extraChannels.reduce((s, c) => s + num(r[c.key]), 0);
         return {
           ...r,
           grossSales: r.sales,                      // ยอดบิลรวม (รวม VAT แล้ว)
@@ -361,7 +412,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [bills, expenses, isVoucherBill]);
+  }, [bills, expenses, isVoucherBill, extraChannels, extraKeyOf]);
 
   /** ช่องทางชำระเงินที่ฐานนี้มีข้อมูลจริง — ช่องที่เป็น 0 ทั้งคอลัมน์ไม่ต้องเอามารก */
   const channelTotals = useMemo(() => {
@@ -377,11 +428,16 @@ export default function Franchise({ view = 'fcDashboard' }) {
       return [...byType.entries()].map(([label, value]) => ({ key: label, label, value }))
         .filter((t) => t.value > 0).sort((a, b) => b.value - a.value);
     }
-    // ยอดที่ไม่เข้าช่องไหนเลย (บิลที่ POS ไม่ได้ลงยอดในช่อง) — โชว์เป็น "อื่นๆ" ให้ผลรวมตรงกับยอดขาย
+    // วิธีจ่ายที่ POS เพิ่มมาใหม่ — ใช้ชื่อจริงเหมือนคอลัมน์ในตารางรายวัน ไม่กองรวมเป็น "อื่นๆ"
+    extraChannels.forEach((c) => {
+      const value = bills.reduce((s, b) => s + (extraKeyOf(b)?.key === c.key ? extraKeyOf(b).amount : 0), 0);
+      if (value > 0) used.push({ key: c.key, label: c.label, value });
+    });
+    // ยังเหลือที่ไม่เข้าช่องไหนเลยอีก — โชว์เป็น "อื่นๆ" ให้ผลรวมตรงกับยอดขาย
     const rest = summary.sales - used.reduce((s, t) => s + t.value, 0);
     if (rest > 1) used.push({ key: '_rest', label: 'อื่นๆ / ไม่ระบุช่องทาง', value: rest });
     return used.sort((a, b) => b.value - a.value);
-  }, [bills, summary.sales]);
+  }, [bills, summary.sales, extraChannels, extraKeyOf]);
 
   const usedChannels = useMemo(
     () => CHANNELS.filter((c) => bills.some((b) => num(b[c.key]) !== 0)),
@@ -654,8 +710,10 @@ export default function Franchise({ view = 'fcDashboard' }) {
   const dailyColumns = useMemo(() => [
     ...FC_DAILY_FIXED_HEAD,
     ...usedChannels.map((c) => ({ key: c.key, label: c.label, type: 'money', drill: `channel:${c.key}` })),
+    // วิธีจ่ายที่ POS เพิ่มมาใหม่ ต่อท้ายกลุ่มช่องทางจ่ายที่รู้จัก
+    ...extraChannels.map((c) => ({ key: c.key, label: c.label, type: 'money', drill: c.key })),
     ...FC_DAILY_FIXED_TAIL,
-  ], [usedChannels]);
+  ], [usedChannels, extraChannels]);
 
   const dailyRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -689,6 +747,8 @@ export default function Franchise({ view = 'fcDashboard' }) {
     if (colDef.drill.startsWith('channel:')) {
       const key = colDef.drill.slice(8);
       fn = (b) => sameDay(b) && num(b[key]) > 0;
+    } else if (colDef.drill.startsWith('pay:')) {
+      fn = (b) => sameDay(b) && extraKeyOf(b)?.key === colDef.drill;
     } else if (['typeDineIn', 'typeTakeHome', 'typeDelivery'].includes(colDef.drill)) {
       fn = (b) => sameDay(b) && orderBucket(b) === colDef.drill;
     } else if (colDef.drill === 'voucherDiscount') {
