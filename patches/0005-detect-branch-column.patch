@@ -1,0 +1,48 @@
+diff --git a/lib/aoringoSql.mjs b/lib/aoringoSql.mjs
+index 44d88f2..65221d0 100644
+--- a/lib/aoringoSql.mjs
++++ b/lib/aoringoSql.mjs
+@@ -178,6 +178,16 @@ function findByName(tables, wanted) {
+    ทุกคอลัมน์ยังเช็กก่อนใช้ว่ามีจริงไหม — แอปเวอร์ชันหน้าเพิ่ม/ตัดคอลัมน์แล้วต้องไม่พังทั้งหน้า
+    ══════════════════════════════════════════════════════════════════════ */
+ 
++/* ชื่อคอลัมน์ "สาขา" ที่เป็นไปได้ — โครงแอปแต่ละเวอร์ชันเรียกไม่เหมือนกัน
++   เรียงเอาชื่อที่อ่านรู้เรื่อง (…Name) ขึ้นก่อนรหัส เพราะค่านี้ไปโผล่บนหน้าเว็บตรง ๆ
++   ไม่มีสักตัว = คืน NULL เหมือนเดิม หน้าเว็บจะขึ้นว่าฐานนี้ไม่มีข้อมูลสาขา ไม่พังทั้งหน้า */
++const BRANCH_COLS = [
++  'BranchName', 'StoreName', 'ShopName', 'OutletName',
++  'BranchCode', 'StoreCode', 'ShopCode', 'OutletCode',
++  'BranchId', 'StoreId', 'ShopId', 'OutletId',
++  'Branch', 'Store', 'Shop', 'Outlet',
++];
++
+ /** คำที่บอกว่าบิลนี้ไม่ใช่ยอดขายจริง (Status เป็นข้อความ ไม่ใช่ 0/1) */
+ const VOID_WORDS = ['void', 'cancel', 'refund', 'ยกเลิก', 'คืนเงิน'];
+ 
+@@ -344,7 +354,7 @@ export function buildAppPlan(app) {
+         : pickAs(o, 'o', ['PaymentMethod'], 'paidType'),
+     cashier ? `${cashier.expr} AS ${bracket('cashier')}` : `NULL AS ${bracket('cashier')}`,
+     pickAs(o, 'o', ['TableName', 'TableId'], 'tableId'),
+-    `NULL AS ${bracket('outletId')}`,
++    pickAs(o, 'o', BRANCH_COLS, 'outletId'),
+     pickAs(o, 'o', ['OpenedAt'], 'startTime'),
+     `NULL AS ${bracket('memberTel')}`,
+     pickAs(o, 'o', ['Note'], 'note'),
+@@ -386,7 +396,7 @@ export function buildAppPlan(app) {
+     pickAs(it, 'i', ['LineTotal'], 'grossPrice'),
+     `NULL AS ${bracket('tax')}`,
+     pickAs(o, 'o', ['TableName', 'TableId'], 'tableId'),
+-    `NULL AS ${bracket('outletId')}`,
++    pickAs(o, 'o', BRANCH_COLS, 'outletId'),
+     cashier ? `${cashier.expr} AS ${bracket('waiter')}` : `NULL AS ${bracket('waiter')}`,
+     `${voided} AS ${bracket('voided')}`,
+     `NULL AS ${bracket('voidTime')}`,
+@@ -465,7 +475,7 @@ export function buildAppPlan(app) {
+         `NULL AS ${bracket('payType')}`,
+         pickAs(e, 'e', ['ExpenseId'], 'ref'),
+         pickAs(e, 'e', ['CreatedBy'], 'user'),
+-        `NULL AS ${bracket('outletId')}`,
++        pickAs(e, 'e', BRANCH_COLS, 'outletId'),
+         pickAs(e, 'e', ['Note'], 'note'),
+         pickAs(e, 'e', ['Unit'], 'unit'),
+         pickAs(e, 'e', ['UnitPrice'], 'unitPrice'),

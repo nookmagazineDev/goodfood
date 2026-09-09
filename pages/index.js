@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Head from 'next/head';
 import {
   Store, LayoutDashboard, FileText, Receipt, TrendingUp, Layers, DollarSign,
-  ChevronDown, ChevronRight, Menu, X,
+  ChevronDown, ChevronRight, Menu, X, Settings,
 } from 'lucide-react';
 import Franchise from '../components/Franchise';
 
@@ -26,6 +26,8 @@ const MENU = [
   { key: 'fcSales',     label: 'รายการขาย',          title: 'เฟรนไชส์ — รายการขาย',          icon: TrendingUp },
   { key: 'fcDetail',    label: 'รายละเอียดการขาย',   title: 'เฟรนไชส์ — รายละเอียดการขาย',   icon: Layers },
   { key: 'fcExpense',   label: 'รายจ่าย',            title: 'เฟรนไชส์ — รายจ่าย',            icon: DollarSign },
+  // หน้าของ goodfood เอง ต้นทางไม่มี — ตั้งชื่อเรียกสาขาและติ๊กว่าสาขาไหนเป็นสาขาเทส
+  { key: 'fcBranch',    label: 'ตั้งค่าสาขา',        title: 'เฟรนไชส์ — ตั้งค่าสาขา',        icon: Settings },
 ];
 
 const TAB_STORAGE_KEY = 'goodfood.activeTab';

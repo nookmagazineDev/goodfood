@@ -3,7 +3,7 @@
   "ref": "main",
   "commit": null,
   "commitDate": null,
-  "syncedAt": "2026-09-09T09:38:38.728Z",
+  "syncedAt": "2026-09-09T13:27:51.649Z",
   "files": [
     "components/Franchise.jsx",
     "pages/api/franchise.js",
@@ -17,6 +17,8 @@
   "patches": [
     "0001-daily-type-columns-before-vat.patch",
     "0002-daily-voucher-discount-column.patch",
-    "0003-daily-pos-payment-columns.patch"
+    "0003-daily-pos-payment-columns.patch",
+    "0004-branch-filter-and-settings.patch",
+    "0005-detect-branch-column.patch"
   ]
 }

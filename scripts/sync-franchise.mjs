@@ -103,13 +103,16 @@ const quoted = (s) => [...s.matchAll(/'([^']+)'/g)].map((x) => x[1]);
 /* ฝั่งเรา MENU มีทั้ง key/label/title ในบรรทัดเดียว — เอาเฉพาะ key ไม่งั้นชื่อเมนูภาษาไทยจะปนมา */
 const keys = (s) => [...s.matchAll(/\bkey:\s*'([^']+)'/g)].map((x) => x[1]);
 
+/* หน้าย่อยที่รีโปนี้ทำเพิ่มเอง ต้นทางไม่มี — ไม่ต้องเตือนว่า "ต้นทางไม่มีแล้ว" */
+const OWN_TABS = ['fcBranch'];
+
 async function compareTabs() {
   const theirs = quoted(block(await get(raw('pages/index.js')), /FRANCHISE_TABS\s*=\s*\[([^\]]*)\]/));
   const ours = keys(block(await readFile('pages/index.js', 'utf8'), /const MENU = \[([\s\S]*?)\n\];/));
   if (!theirs.length) return null;
   return {
     missing: theirs.filter((t) => !ours.includes(t)),
-    extra: ours.filter((t) => !theirs.includes(t)),
+    extra: ours.filter((t) => !theirs.includes(t) && !OWN_TABS.includes(t)),
   };
 }
 

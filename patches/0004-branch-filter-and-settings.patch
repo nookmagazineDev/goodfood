@@ -1,0 +1,219 @@
+diff --git a/components/Franchise.jsx b/components/Franchise.jsx
+index fe0907e..86e8893 100644
+--- a/components/Franchise.jsx
++++ b/components/Franchise.jsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useMemo, useCallback } from 'react';
++import React, { useState, useMemo, useCallback, useEffect } from 'react';
+ import {
+   TrendingUp, Receipt, Layers, DollarSign, Search, Download, X, Eye, History, FileText,
+   Loader2, AlertCircle, RefreshCw, Store, Users, CreditCard, Wallet, ChevronLeft, ChevronRight,
+@@ -112,6 +112,30 @@ const extraPayOf = (b) => {
+    ตารางบานเป็นร้อยคอลัมน์ เกินจากนี้ยุบรวมเป็น "อื่นๆ" ช่องเดียว */
+ const EXTRA_PAY_MAX = 12;
+ 
++/* ── ตั้งค่าสาขา ────────────────────────────────────────────────────────
++   ทุกสาขาอยู่ฐานเดียวกัน แยกด้วยคอลัมน์สาขาใน SaleOrder/Expense (ดู BRANCH_COLS
++   ใน lib/aoringoSql.mjs) หน้าเว็บจึงกรองฝั่งหน้าเว็บได้เลย ไม่ต้องยิงใหม่ทุกครั้งที่สลับสาขา
++
++   ค่าที่ตั้งไว้ (ชื่อเรียก · สาขาไหนเป็นสาขาเทส) เก็บใน localStorage เพราะเมนูนี้อ่านฐาน
++   อย่างเดียว ไม่มีฝั่งเขียนกลับ — ตั้งที่เครื่องไหนก็มีผลเฉพาะเบราว์เซอร์เครื่องนั้น */
++const BRANCH_CFG_KEY = 'goodfood.branchConfig';   // { [รหัสสาขา]: { name, test } }
++const BRANCH_SEL_KEY = 'goodfood.branchSelected'; // '' = ทุกสาขา (ไม่รวมเทส) · '__all__' = รวมเทส · อื่น = สาขานั้น
++const ALL_WITH_TEST = '__all__';
++const NO_BRANCH = '__none__';                     // แถวที่ไม่มีค่าสาขา (ฐานเก่า/ข้อมูลตกหล่น)
++
++const loadJson = (key, fallback) => {
++  try {
++    const raw = window.localStorage.getItem(key);
++    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
++  } catch { return fallback; }   // เบราว์เซอร์ปิด storage ไว้ ก็ใช้ค่าเริ่มต้น
++};
++const saveJson = (key, value) => {
++  try { window.localStorage.setItem(key, JSON.stringify(value)); } catch { /* ไม่ต้องจำก็ใช้งานได้ */ }
++};
++
++/** รหัสสาขาของแถวหนึ่ง — ไม่มีค่าถือเป็น NO_BRANCH จะได้ไม่หายไปจากทุกตัวกรอง */
++const branchOf = (r) => str(r?.outletId) || NO_BRANCH;
++
+ /* คำที่นับว่าเป็น "voucher" — แต่ละร้านพิมพ์ไม่เหมือนกัน (อังกฤษ/ทับศัพท์/คูปอง)
+    ใช้จับทั้งชื่อวิธีจ่าย หมายเหตุบิล และข้อความในประวัติออเดอร์ */
+ const VOUCHER_RE = /voucher|วอยเชอร์|เวาเชอร์|เวาว์เชอร์|คูปอง/i;
+@@ -290,9 +314,59 @@ export default function Franchise({ view = 'fcDashboard' }) {
+   const applyToday = () => { setStartDate(todayISO()); setEndDate(todayISO()); };
+ 
+   /* ── ตัวเลขที่ทุกหน้าย่อยใช้ร่วมกัน ── */
+-  const bills = useMemo(() => (data?.bills || []).filter((b) => !isVoid(b)), [data]);
+-  const items = useMemo(() => (data?.items || []).filter((i) => !isVoid(i)), [data]);
+-  const expenses = useMemo(() => data?.expenses || [], [data]);
++  const allBills = useMemo(() => (data?.bills || []).filter((b) => !isVoid(b)), [data]);
++  const allItems = useMemo(() => (data?.items || []).filter((i) => !isVoid(i)), [data]);
++  const allExpenses = useMemo(() => data?.expenses || [], [data]);
++
++  /* ── สาขา ──
++     ทุกสาขาอยู่ฐานเดียวกัน กรองฝั่งหน้าเว็บได้เลย ข้อมูลที่โหลดไว้จึงไม่หายตอนสลับสาขา */
++  const [branchCfg, setBranchCfg] = useState({});     // { [รหัสสาขา]: { name, test } }
++  const [branchSel, setBranchSel] = useState('');     // '' = ทุกสาขา (ไม่รวมเทส)
++  // อ่านหลัง mount เท่านั้น ไม่งั้น HTML ฝั่งเซิร์ฟเวอร์กับฝั่งเบราว์เซอร์ไม่ตรงกัน
++  useEffect(() => {
++    setBranchCfg(loadJson(BRANCH_CFG_KEY, {}));
++    try {
++      const sel = window.localStorage.getItem(BRANCH_SEL_KEY);
++      if (sel !== null) setBranchSel(sel);
++    } catch { /* เบราว์เซอร์ปิด storage ไว้ ก็เริ่มที่ทุกสาขา */ }
++  }, []);
++
++  const pickBranch = (v) => { setBranchSel(v); try { window.localStorage.setItem(BRANCH_SEL_KEY, v); } catch { /* ไม่ต้องจำก็ได้ */ } };
++  const updateBranch = (id, patch) => {
++    setBranchCfg((prev) => {
++      const next = { ...prev, [id]: { ...(prev[id] || {}), ...patch } };
++      saveJson(BRANCH_CFG_KEY, next);
++      return next;
++    });
++  };
++
++  /** ทุกรหัสสาขาที่โผล่ในข้อมูลช่วงที่โหลดมา (บิล + รายจ่าย) */
++  const branchIds = useMemo(() => {
++    const set = new Set();
++    allBills.forEach((b) => set.add(branchOf(b)));
++    allExpenses.forEach((e) => set.add(branchOf(e)));
++    return [...set].sort((a, b) => a.localeCompare(b, 'th'));
++  }, [allBills, allExpenses]);
++
++  /** ฐานนี้มีข้อมูลสาขาจริงไหม — ไม่มีเลยก็ไม่ต้องกรองอะไร และซ่อนตัวเลือกสาขาทิ้ง */
++  const hasBranchData = useMemo(() => branchIds.some((id) => id !== NO_BRANCH), [branchIds]);
++  const branchLabel = useCallback(
++    (id) => str(branchCfg[id]?.name) || (id === NO_BRANCH ? 'ไม่ระบุสาขา' : id),
++    [branchCfg]
++  );
++
++  /** แถวนี้อยู่ในสาขาที่กำลังดูอยู่ไหม */
++  const keepBranch = useCallback((r) => {
++    if (!hasBranchData) return true;
++    if (branchSel === ALL_WITH_TEST) return true;
++    const id = branchOf(r);
++    if (branchSel) return id === branchSel;
++    return !branchCfg[id]?.test;    // ทุกสาขา = ตัดสาขาเทสออก
++  }, [hasBranchData, branchSel, branchCfg]);
++
++  const bills = useMemo(() => allBills.filter(keepBranch), [allBills, keepBranch]);
++  const items = useMemo(() => allItems.filter(keepBranch), [allItems, keepBranch]);
++  const expenses = useMemo(() => allExpenses.filter(keepBranch), [allExpenses, keepBranch]);
+   // ประวัติออเดอร์ไม่กรองบิลที่ยกเลิกออก — "ยกเลิกเมื่อไหร่ ใครยกเลิก" คือสิ่งที่คนเปิดหน้านี้มาหา
+   const activities = useMemo(() => data?.activities || [], [data]);
+ 
+@@ -541,6 +615,24 @@ export default function Franchise({ view = 'fcDashboard' }) {
+             className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-400"
+           />
+         </div>
++        {hasBranchData && (
++          <div>
++            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">สาขา</label>
++            <select
++              value={branchSel}
++              onChange={(e) => pickBranch(e.target.value)}
++              className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
++            >
++              <option value="">ทุกสาขา (ไม่รวมสาขาเทส)</option>
++              <option value={ALL_WITH_TEST}>ทุกสาขา + สาขาเทส</option>
++              {branchIds.map((id) => (
++                <option key={id} value={id}>
++                  {branchLabel(id)}{branchCfg[id]?.test ? ' (เทส)' : ''}
++                </option>
++              ))}
++            </select>
++          </div>
++        )}
+         <button
+           onClick={load}
+           disabled={loading}
+@@ -1304,7 +1396,89 @@ export default function Franchise({ view = 'fcDashboard' }) {
+     </div>
+   );
+ 
++  /* ── หน้าย่อย: ตั้งค่าสาขา ──
++     ทุกสาขาอยู่ฐานเดียวกัน หน้านี้จึงไม่ได้ "เพิ่มสาขา" เอง แต่ลิสต์สาขาที่โผล่ในข้อมูลจริง
++     ของช่วงวันที่ที่โหลดมา แล้วให้ตั้งชื่อเรียกกับติ๊กว่าสาขาไหนเป็นสาขาเทส
++     สาขาเทสจะถูกตัดออกจากทุกหน้าโดยอัตโนมัติ เว้นแต่เลือก "ทุกสาขา + สาขาเทส" */
++  const branchView = (
++    <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
++      {sectionHead(<Store size={16} className="text-emerald-600" />, 'ตั้งค่าสาขา')}
++      {!hasBranchData ? (
++        <div className="p-6 text-sm text-slate-500 space-y-3">
++          <p className="font-semibold text-slate-700">ฐานนี้ยังไม่มีข้อมูลสาขาในตารางที่อ่านอยู่</p>
++          <p>
++            บิลทุกใบที่โหลดมาไม่มีค่าสาขาเลย — แปลว่าตาราง <code className="px-1 bg-slate-100 rounded">SaleOrder</code>{' '}
++            ไม่มีคอลัมน์สาขา หรือมีแต่ชื่อไม่ตรงกับที่โค้ดมองหา
++          </p>
++          <p>
++            เปิด <code className="px-1 bg-slate-100 rounded">/api/franchise?view=schema</code>{' '}
++            ดูรายชื่อคอลัมน์ของตารางบิล ถ้ามีคอลัมน์สาขาชื่ออื่น บอกชื่อนั้นมาแล้วเพิ่มเข้า{' '}
++            <code className="px-1 bg-slate-100 rounded">BRANCH_COLS</code> ใน{' '}
++            <code className="px-1 bg-slate-100 rounded">lib/aoringoSql.mjs</code> ได้เลย
++          </p>
++        </div>
++      ) : (
++        <>
++          <div className="px-5 py-2 text-[11px] text-slate-400 border-b border-slate-100">
++            พบ {int(branchIds.length)} สาขาในข้อมูลช่วง {startDate} ถึง {endDate} · ตั้งชื่อเรียกและติ๊กสาขาเทสได้
++            · สาขาเทสจะถูกตัดออกจากทุกหน้า เว้นแต่เลือก &quot;ทุกสาขา + สาขาเทส&quot;
++          </div>
++          <div className="overflow-auto">
++            <table className="w-full text-left text-xs border-collapse">
++              <thead>
++                <tr className="bg-slate-50 border-b border-slate-100 text-slate-600 font-bold">
++                  <th className="px-4 py-2.5">รหัสสาขาในฐาน</th>
++                  <th className="px-4 py-2.5">ชื่อที่ใช้เรียก</th>
++                  <th className="px-4 py-2.5 text-right">จำนวนบิล</th>
++                  <th className="px-4 py-2.5 text-right">ยอดขาย</th>
++                  <th className="px-4 py-2.5 text-center">สาขาเทส</th>
++                </tr>
++              </thead>
++              <tbody className="divide-y divide-slate-50">
++                {branchIds.map((id) => {
++                  const rows = allBills.filter((b) => branchOf(b) === id);
++                  const sales = rows.reduce((t, b) => t + billAmount(b), 0);
++                  const isTest = Boolean(branchCfg[id]?.test);
++                  return (
++                    <tr key={id} className={`hover:bg-emerald-50/40 ${isTest ? 'bg-amber-50/40' : ''}`}>
++                      <td className="px-4 py-2.5 font-mono text-slate-700">
++                        {id === NO_BRANCH ? <span className="text-slate-400">(ไม่ระบุสาขา)</span> : id}
++                      </td>
++                      <td className="px-4 py-2.5">
++                        <input
++                          value={str(branchCfg[id]?.name)}
++                          onChange={(e) => updateBranch(id, { name: e.target.value })}
++                          placeholder={id === NO_BRANCH ? 'ไม่ระบุสาขา' : id}
++                          className="w-56 px-2 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-400"
++                        />
++                      </td>
++                      <td className="px-4 py-2.5 text-right font-mono text-slate-600">{int(rows.length)}</td>
++                      <td className="px-4 py-2.5 text-right font-mono text-slate-700">฿{money(sales)}</td>
++                      <td className="px-4 py-2.5 text-center">
++                        <input
++                          type="checkbox"
++                          checked={isTest}
++                          onChange={(e) => updateBranch(id, { test: e.target.checked })}
++                          className="w-4 h-4 accent-emerald-600 cursor-pointer"
++                        />
++                      </td>
++                    </tr>
++                  );
++                })}
++              </tbody>
++            </table>
++          </div>
++          <div className="px-5 py-3 border-t border-slate-100 text-[11px] text-slate-400">
++            ค่าที่ตั้งไว้เก็บในเบราว์เซอร์เครื่องนี้เท่านั้น (เมนูนี้อ่านฐานอย่างเดียว ไม่มีการเขียนกลับ)
++            — เปิดจากอีกเครื่องหรือล้างข้อมูลเบราว์เซอร์แล้วต้องตั้งใหม่
++          </div>
++        </>
++      )}
++    </div>
++  );
++
+   const views = {
++    fcBranch: branchView,
+     fcDashboard: dashboardView,
+     fcReport: reportView,
+     fcDaily: dailyView,
