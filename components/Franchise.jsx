@@ -127,9 +127,10 @@ const FC_DAILY_FIXED_HEAD = [
   { key: 'typeTakeHome', label: 'Take-Home', type: 'money', drill: 'typeTakeHome' },
   { key: 'typeDelivery', label: 'Delivery', type: 'money', drill: 'typeDelivery' },
   { key: 'serviceChg', label: 'Service Charge', type: 'money' },
-  // ช่อง "ส่วนลด" นับเฉพาะส่วนลดที่ไม่ใช่ voucher — voucher ถือเป็น "วิธีจ่าย" ไม่ใช่ส่วนลด
-  // จึงไปโผล่ในกลุ่มช่องทางจ่าย (ดู usedChannels) และยอดขายถูกบวกกลับเป็นยอดก่อนใช้ voucher
+  // ช่อง "ส่วนลด" นับเฉพาะส่วนลดที่ไม่ใช่ voucher — voucher แยกไปอยู่ช่องถัดไปของตัวเอง
+  // สองช่องนี้ไม่ทับกัน บวกกันแล้วได้ส่วนลดทั้งหมด และไม่มีช่องไหนถูกบวกเข้า Net/Gross
   { key: 'discount', label: 'ส่วนลด', type: 'money' },
+  { key: 'voucherDiscount', label: 'Voucher', type: 'money', drill: 'voucherDiscount' },
   { key: 'netSales', label: 'Net Sales', type: 'money', tone: 'emerald' },
   { key: 'vat', label: 'Vat', type: 'money', tone: 'muted' },
   { key: 'grossSales', label: 'Gross Sales', type: 'money', tone: 'brand', drill: 'all' },
@@ -287,44 +288,29 @@ export default function Franchise({ view = 'fcDashboard' }) {
     [voucherCheckIds]
   );
 
-  /* ยอด voucher ของบิลหนึ่ง มาได้สองทางแล้วแต่ร้านบันทึกยังไง — รวมกันเป็นช่องเดียว
-       · b.voucher   ร้านบันทึกเป็น "วิธีจ่าย" ใน OrderPayment (ยอดบิลรวมส่วนนี้อยู่แล้ว)
-       · b.discount  ร้านบันทึกเป็น "ส่วนลด" ของบิลที่มีคำว่า voucher (ยอดบิลถูกหักไปแล้ว)
-     สองทางนี้มาจากคนละคอลัมน์ จึงบวกกันได้โดยไม่นับซ้ำ */
-  const voucherDiscOf = useCallback(
-    (b) => (isVoucherBill(b) ? num(b.discount) : 0),
-    [isVoucherBill]
-  );
-  const voucherOf = useCallback(
-    (b) => num(b.voucher) + voucherDiscOf(b),
-    [voucherDiscOf]
-  );
-
   const summary = useMemo(() => {
-    // ใช้กติกา voucher ชุดเดียวกับตารางยอดขายรายวัน — ยอดขายเป็น "ก่อนใช้ voucher"
-    // ไม่งั้นการ์ดบนแดชบอร์ดกับกราฟยอดขายรายวันบนหน้าเดียวกันจะต่างกันเท่ายอด voucher
-    const sales = bills.reduce((s, b) => s + billAmount(b) + voucherDiscOf(b), 0);
+    const sales = bills.reduce((s, b) => s + billAmount(b), 0);
     const cover = bills.reduce((s, b) => s + num(b.cover), 0);
     const vat = bills.reduce((s, b) => s + num(b.vat), 0);
-    const discount = bills.reduce((s, b) => s + (isVoucherBill(b) ? 0 : num(b.discount)), 0);
-    const voucher = bills.reduce((s, b) => s + voucherOf(b), 0);
+    const discount = bills.reduce((s, b) => s + num(b.discount), 0);
     const expense = expenses.reduce((s, e) => s + num(e.amount), 0);
     const qty = items.reduce((s, i) => s + num(i.quantity), 0);
     const days = new Set(bills.map((b) => dayOf(b.date)).filter(Boolean)).size;
     return {
-      sales, cover, vat, discount, voucher, expense, qty, days,
+      sales, cover, vat, discount, expense, qty, days,
       billCount: bills.length,
       avgPerBill: bills.length ? sales / bills.length : 0,
       avgPerCover: cover ? sales / cover : 0,
       avgPerDay: days ? sales / days : 0,
       net: sales - expense,
     };
-  }, [bills, items, expenses, isVoucherBill, voucherDiscOf, voucherOf]);
+  }, [bills, items, expenses]);
 
   /** ยอดรายวัน — ตัวตั้งของทั้งหน้า "ยอดขายรายวัน" และกราฟบนแดชบอร์ด */
   const daily = useMemo(() => {
     const blank = (d) => ({
       date: d, billCount: 0, cover: 0, sales: 0, vat: 0, discount: 0, serviceChg: 0,
+      voucherDiscount: 0,
       typeDineIn: 0, typeTakeHome: 0, typeDelivery: 0,
       ...Object.fromEntries(CHANNELS.map((c) => [c.key, 0])),
     });
@@ -334,22 +320,21 @@ export default function Franchise({ view = 'fcDashboard' }) {
       if (!d) return;
       if (!map.has(d)) map.set(d, blank(d));
       const row = map.get(d);
-      // voucher ถือเป็นวิธีจ่าย ไม่ใช่ส่วนลด — บิลที่ใช้ voucher จึงบวกส่วนที่ถูกหักกลับเข้ายอดขาย
-      // ให้เป็น "ยอดขายจริงก่อนใช้ voucher" แล้วเอายอดนั้นไปลงช่องทางจ่าย voucher แทน
-      // (b.voucher ที่ร้านบันทึกเป็นวิธีจ่ายอยู่แล้ว ไม่ต้องบวกกลับ เพราะยอดบิลรวมไว้แล้ว)
-      const voucherDisc = voucherDiscOf(b);
-      const amt = billAmount(b) + voucherDisc;
+      const amt = billAmount(b);
       row.billCount += 1;
       row.cover += num(b.cover);
       row.sales += amt;
       row.vat += num(b.vat);
-      if (!isVoucherBill(b)) row.discount += num(b.discount);
+      // voucher แยกไปอยู่ช่องของตัวเอง ไม่นับซ้ำในช่อง "ส่วนลด"
+      // (ช่อง "ส่วนลด" + ช่อง "Voucher" = ส่วนลดทั้งหมดของวันนั้น)
+      if (isVoucherBill(b)) row.voucherDiscount += num(b.discount);
+      else row.discount += num(b.discount);
       row.serviceChg += num(b.serviceChg);
       // Dine-in / Take-Home / Delivery = ยอด "ก่อน VAT" ของบิลนั้น — แบบเดียวกับตาราง "ยอดรายวัน"
       // ของเมนู ACC (pages/index.js: net = billTotal - vat แล้ว netSales = dineIn + takeHome + delivery)
       // บิลหนึ่งลงถังเดียว จึงหัก VAT ของบิลนั้นตรง ๆ ได้ ไม่ต้องเฉลี่ย และผลรวมสามช่อง = Net Sales พอดี
       row[orderBucket(b)] += amt - num(b.vat);
-      CHANNELS.forEach((c) => { row[c.key] += c.key === 'voucher' ? voucherOf(b) : num(b[c.key]); });
+      CHANNELS.forEach((c) => { row[c.key] += num(b[c.key]); });
     });
     const expByDay = new Map();
     expenses.forEach((e) => {
@@ -376,16 +361,11 @@ export default function Franchise({ view = 'fcDashboard' }) {
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [bills, expenses, isVoucherBill, voucherDiscOf, voucherOf]);
+  }, [bills, expenses, isVoucherBill]);
 
   /** ช่องทางชำระเงินที่ฐานนี้มีข้อมูลจริง — ช่องที่เป็น 0 ทั้งคอลัมน์ไม่ต้องเอามารก */
   const channelTotals = useMemo(() => {
-    // voucher ต้องถามผ่าน voucherOf เหมือนตารางรายวัน ไม่งั้นร้านที่บันทึก voucher เป็นส่วนลด
-    // จะไม่เห็นชิ้น voucher ในกราฟนี้เลย ทั้งที่ตารางรายวันมีช่องนั้นอยู่
-    const totals = CHANNELS.map((c) => ({
-      ...c,
-      value: bills.reduce((s, b) => s + (c.key === 'voucher' ? voucherOf(b) : num(b[c.key])), 0),
-    }));
+    const totals = CHANNELS.map((c) => ({ ...c, value: bills.reduce((s, b) => s + num(b[c.key]), 0) }));
     const used = totals.filter((t) => t.value > 0);
     // ไม่มีคอลัมน์ช่องทางจ่ายเลย → ถอยไปแจกแจงตาม PaidType ซึ่งเกือบทุก POS มี
     if (!used.length) {
@@ -401,13 +381,11 @@ export default function Franchise({ view = 'fcDashboard' }) {
     const rest = summary.sales - used.reduce((s, t) => s + t.value, 0);
     if (rest > 1) used.push({ key: '_rest', label: 'อื่นๆ / ไม่ระบุช่องทาง', value: rest });
     return used.sort((a, b) => b.value - a.value);
-  }, [bills, summary.sales, voucherOf]);
+  }, [bills, summary.sales]);
 
-  // ช่องทางจ่ายที่ฐานนี้มียอดจริง — voucher ต้องดูจาก voucherOf ไม่ใช่คอลัมน์ b.voucher อย่างเดียว
-  // ไม่งั้นร้านที่บันทึก voucher เป็นส่วนลด จะไม่เห็นช่อง voucher เลย
   const usedChannels = useMemo(
-    () => CHANNELS.filter((c) => bills.some((b) => (c.key === 'voucher' ? voucherOf(b) : num(b[c.key])) !== 0)),
-    [bills, voucherOf]
+    () => CHANNELS.filter((c) => bills.some((b) => num(b[c.key]) !== 0)),
+    [bills]
   );
 
   /** สรุปตามเมนู — ใช้ทั้งกราฟ "เมนูขายดี" และหน้า "รายละเอียดการขาย" โหมดสรุป */
@@ -710,12 +688,12 @@ export default function Franchise({ view = 'fcDashboard' }) {
     let title = `${colDef.label} · ${row.date}`;
     if (colDef.drill.startsWith('channel:')) {
       const key = colDef.drill.slice(8);
-      // voucher มาได้สองทาง (วิธีจ่าย/ส่วนลด) จึงต้องถามผ่าน voucherOf ไม่ใช่ดูคอลัมน์เดียว
-      fn = key === 'voucher'
-        ? (b) => sameDay(b) && voucherOf(b) > 0
-        : (b) => sameDay(b) && num(b[key]) > 0;
+      fn = (b) => sameDay(b) && num(b[key]) > 0;
     } else if (['typeDineIn', 'typeTakeHome', 'typeDelivery'].includes(colDef.drill)) {
       fn = (b) => sameDay(b) && orderBucket(b) === colDef.drill;
+    } else if (colDef.drill === 'voucherDiscount') {
+      // เอาเฉพาะบิลที่มีส่วนลดจริง ไม่งั้นบิลที่พิมพ์คำว่า voucher ไว้เฉย ๆ (ส่วนลด 0) จะโผล่มาด้วย
+      fn = (b) => sameDay(b) && isVoucherBill(b) && num(b.discount) !== 0;
     } else {
       title = `บิลทั้งหมด · ${row.date}`;
     }
