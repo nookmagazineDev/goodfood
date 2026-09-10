@@ -1,5 +1,5 @@
 diff --git a/lib/aoringoSql.mjs b/lib/aoringoSql.mjs
-index 44d88f2..65221d0 100644
+index 44d88f2..4ba2549 100644
 --- a/lib/aoringoSql.mjs
 +++ b/lib/aoringoSql.mjs
 @@ -178,6 +178,16 @@ function findByName(tables, wanted) {
@@ -46,3 +46,23 @@ index 44d88f2..65221d0 100644
          pickAs(e, 'e', ['Note'], 'note'),
          pickAs(e, 'e', ['Unit'], 'unit'),
          pickAs(e, 'e', ['UnitPrice'], 'unitPrice'),
+@@ -544,7 +554,9 @@ export function createAoringo(db) {
+               : null,
+           },
+           plan,
+-          tables: tables.map((t) => ({ name: t.full, columns: t.columns.length })),
++          // แนบชื่อคอลัมน์มาด้วย ไม่ใช่แค่จำนวน — เวลาหาว่าฐานนี้เก็บสาขา/ส่วนลด/อะไรไว้คอลัมน์ไหน
++          // จะได้ดูจบในคำขอเดียว ไม่ต้องไปไล่ SELECT INFORMATION_SCHEMA ที่เครื่อง SQL เอง
++          tables: tables.map((t) => ({ name: t.full, columns: t.columns.length, columnNames: t.columns.map((c) => c.name || c) })),
+           note: 'อ่านแบบโครงแอปร้านอาหาร (SaleOrder/SaleOrderItem/OrderPayment/Expense) — ' +
+             'อยากให้กลับไปใช้ตัวจับคู่อัตโนมัติให้ตั้ง env AORINGO_SCHEMA_MODE=generic',
+         };
+@@ -603,7 +615,7 @@ export function createAoringo(db) {
+           }
+         : null;
+     }
+-    out.tables = tables.map((t) => ({ name: t.full, columns: t.columns.length }));
++    out.tables = tables.map((t) => ({ name: t.full, columns: t.columns.length, columnNames: t.columns.map((c) => c.name || c) }));
+     layoutCache = out;
+     layoutAt = Date.now();
+     return out;
