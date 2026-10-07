@@ -19,6 +19,7 @@
     "0002-daily-voucher-discount-column.patch",
     "0003-daily-pos-payment-columns.patch",
     "0004-branch-filter-and-settings.patch",
-    "0005-detect-branch-column.patch"
+    "0005-detect-branch-column.patch",
+    "0006-voucher-as-payment-channel.patch"
   ]
 }
