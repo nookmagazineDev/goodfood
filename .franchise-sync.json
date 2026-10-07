@@ -15,12 +15,7 @@
     "docs/franchise-aoringo.md"
   ],
   "patches": [
-    "0001-daily-type-columns-before-vat.patch",
-    "0002-daily-voucher-discount-column.patch",
-    "0003-daily-pos-payment-columns.patch",
     "0004-branch-filter-and-settings.patch",
-    "0005-detect-branch-column.patch",
-    "0006-voucher-as-payment-channel.patch",
-    "0007-report-pre-vat-column.patch"
+    "0005-detect-branch-column.patch"
   ]
 }
