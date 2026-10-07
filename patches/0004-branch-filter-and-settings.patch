@@ -1,14 +1,8 @@
 diff --git a/components/Franchise.jsx b/components/Franchise.jsx
-index fe0907e..86e8893 100644
+index 743f164..60004b1 100644
 --- a/components/Franchise.jsx
 +++ b/components/Franchise.jsx
-@@ -1,4 +1,4 @@
--import React, { useState, useMemo, useCallback } from 'react';
-+import React, { useState, useMemo, useCallback, useEffect } from 'react';
- import {
-   TrendingUp, Receipt, Layers, DollarSign, Search, Download, X, Eye, History, FileText,
-   Loader2, AlertCircle, RefreshCw, Store, Users, CreditCard, Wallet, ChevronLeft, ChevronRight,
-@@ -112,6 +112,30 @@ const extraPayOf = (b) => {
+@@ -117,6 +117,30 @@ const extraPayOf = (b) => {
     ตารางบานเป็นร้อยคอลัมน์ เกินจากนี้ยุบรวมเป็น "อื่นๆ" ช่องเดียว */
  const EXTRA_PAY_MAX = 12;
  
@@ -39,7 +33,7 @@ index fe0907e..86e8893 100644
  /* คำที่นับว่าเป็น "voucher" — แต่ละร้านพิมพ์ไม่เหมือนกัน (อังกฤษ/ทับศัพท์/คูปอง)
     ใช้จับทั้งชื่อวิธีจ่าย หมายเหตุบิล และข้อความในประวัติออเดอร์ */
  const VOUCHER_RE = /voucher|วอยเชอร์|เวาเชอร์|เวาว์เชอร์|คูปอง/i;
-@@ -290,9 +314,59 @@ export default function Franchise({ view = 'fcDashboard' }) {
+@@ -583,9 +607,59 @@ export default function Franchise({ view = 'fcDashboard' }) {
    const applyToday = () => { setStartDate(todayISO()); setEndDate(todayISO()); };
  
    /* ── ตัวเลขที่ทุกหน้าย่อยใช้ร่วมกัน ── */
@@ -102,7 +96,7 @@ index fe0907e..86e8893 100644
    // ประวัติออเดอร์ไม่กรองบิลที่ยกเลิกออก — "ยกเลิกเมื่อไหร่ ใครยกเลิก" คือสิ่งที่คนเปิดหน้านี้มาหา
    const activities = useMemo(() => data?.activities || [], [data]);
  
-@@ -541,6 +615,24 @@ export default function Franchise({ view = 'fcDashboard' }) {
+@@ -856,6 +930,24 @@ export default function Franchise({ view = 'fcDashboard' }) {
              className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-400"
            />
          </div>
@@ -127,7 +121,7 @@ index fe0907e..86e8893 100644
          <button
            onClick={load}
            disabled={loading}
-@@ -1304,7 +1396,89 @@ export default function Franchise({ view = 'fcDashboard' }) {
+@@ -1652,7 +1744,89 @@ export default function Franchise({ view = 'fcDashboard' }) {
      </div>
    );
  
