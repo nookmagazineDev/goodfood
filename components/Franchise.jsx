@@ -92,6 +92,10 @@ const hasValue = (v) => v !== null && v !== undefined && String(v).trim() !== ''
    ใช้เช็กว่าชื่อวิธีจ่ายของบิลเป็นถังที่รู้จักอยู่แล้วหรือเป็นของใหม่ที่ POS เพิ่งเพิ่มมา */
 const KNOWN_PAY_RE = /cash|เงินสด|qr|promptpay|transfer|โอน|พร้อมเพย์|credit|card|บัตร|voucher|คูปอง|grab|line ?man|delivery|shopee|robinhood|panda/i;
 
+/* รายได้ก่อน VAT ของบิล — ยอดรวมบิลหัก VAT ของบิลนั้น (หน้า "รายงานยอดขาย")
+   ช่องนี้ + ช่อง VAT = ยอดรวมบิล พอดี */
+const preVatOf = (b) => billAmount(b) - num(b.vat);
+
 /* ยอดของบิลที่ไม่ได้ลงช่องทางจ่ายที่รู้จักสักช่อง
    POS เพิ่มวิธีจ่ายใหม่ ฝั่ง SQL จัดไม่เข้าถังไหน ยอดก้อนนั้นจะหายไปจากตาราง
    (อาการคือ Total Sales น้อยกว่า Gross Sales) จึงดึงกลับมาตั้งเป็นคอลัมน์ของตัวเอง
@@ -175,10 +179,9 @@ const FC_DAILY_FIXED_HEAD = [
   { key: 'typeTakeHome', label: 'Take-Home', type: 'money', drill: 'typeTakeHome' },
   { key: 'typeDelivery', label: 'Delivery', type: 'money', drill: 'typeDelivery' },
   { key: 'serviceChg', label: 'Service Charge', type: 'money' },
-  // ช่อง "ส่วนลด" นับเฉพาะส่วนลดที่ไม่ใช่ voucher — voucher แยกไปอยู่ช่องถัดไปของตัวเอง
-  // สองช่องนี้ไม่ทับกัน บวกกันแล้วได้ส่วนลดทั้งหมด และไม่มีช่องไหนถูกบวกเข้า Net/Gross
+  // ช่อง "ส่วนลด" นับเฉพาะส่วนลดที่ไม่ใช่ voucher — voucher ถือเป็น "วิธีจ่าย" ไม่ใช่ส่วนลด
+  // จึงไปโผล่ในกลุ่มช่องทางจ่าย (ดู usedChannels) และยอดขายถูกบวกกลับเป็นยอดก่อนใช้ voucher
   { key: 'discount', label: 'ส่วนลด', type: 'money' },
-  { key: 'voucherDiscount', label: 'Voucher', type: 'money', drill: 'voucherDiscount' },
   { key: 'netSales', label: 'Net Sales', type: 'money', tone: 'emerald' },
   { key: 'vat', label: 'Vat', type: 'money', tone: 'muted' },
   { key: 'grossSales', label: 'Gross Sales', type: 'money', tone: 'brand', drill: 'all' },
@@ -386,23 +389,39 @@ export default function Franchise({ view = 'fcDashboard' }) {
     [voucherCheckIds]
   );
 
+  /* ยอด voucher ของบิลหนึ่ง มาได้สองทางแล้วแต่ร้านบันทึกยังไง — รวมกันเป็นช่องเดียว
+       · b.voucher   ร้านบันทึกเป็น "วิธีจ่าย" ใน OrderPayment (ยอดบิลรวมส่วนนี้อยู่แล้ว)
+       · b.discount  ร้านบันทึกเป็น "ส่วนลด" ของบิลที่มีคำว่า voucher (ยอดบิลถูกหักไปแล้ว)
+     สองทางนี้มาจากคนละคอลัมน์ จึงบวกกันได้โดยไม่นับซ้ำ */
+  const voucherDiscOf = useCallback(
+    (b) => (isVoucherBill(b) ? num(b.discount) : 0),
+    [isVoucherBill]
+  );
+  const voucherOf = useCallback(
+    (b) => num(b.voucher) + voucherDiscOf(b),
+    [voucherDiscOf]
+  );
+
   const summary = useMemo(() => {
-    const sales = bills.reduce((s, b) => s + billAmount(b), 0);
+    // ใช้กติกา voucher ชุดเดียวกับตารางยอดขายรายวัน — ยอดขายเป็น "ก่อนใช้ voucher"
+    // ไม่งั้นการ์ดบนแดชบอร์ดกับกราฟยอดขายรายวันบนหน้าเดียวกันจะต่างกันเท่ายอด voucher
+    const sales = bills.reduce((s, b) => s + billAmount(b) + voucherDiscOf(b), 0);
     const cover = bills.reduce((s, b) => s + num(b.cover), 0);
     const vat = bills.reduce((s, b) => s + num(b.vat), 0);
-    const discount = bills.reduce((s, b) => s + num(b.discount), 0);
+    const discount = bills.reduce((s, b) => s + (isVoucherBill(b) ? 0 : num(b.discount)), 0);
+    const voucher = bills.reduce((s, b) => s + voucherOf(b), 0);
     const expense = expenses.reduce((s, e) => s + num(e.amount), 0);
     const qty = items.reduce((s, i) => s + num(i.quantity), 0);
     const days = new Set(bills.map((b) => dayOf(b.date)).filter(Boolean)).size;
     return {
-      sales, cover, vat, discount, expense, qty, days,
+      sales, cover, vat, discount, voucher, expense, qty, days,
       billCount: bills.length,
       avgPerBill: bills.length ? sales / bills.length : 0,
       avgPerCover: cover ? sales / cover : 0,
       avgPerDay: days ? sales / days : 0,
       net: sales - expense,
     };
-  }, [bills, items, expenses]);
+  }, [bills, items, expenses, isVoucherBill, voucherDiscOf, voucherOf]);
 
   /* วิธีจ่ายที่ POS เพิ่มใหม่แล้วฝั่ง SQL ยังไม่มีถังรองรับ — ตั้งเป็นคอลัมน์ตามชื่อที่บันทึกมาจริง
      เรียงจากยอดมากไปน้อย ตัวที่เกินเพดานยุบรวมเป็น "อื่นๆ" ช่องเดียว */
@@ -431,7 +450,6 @@ export default function Franchise({ view = 'fcDashboard' }) {
   const daily = useMemo(() => {
     const blank = (d) => ({
       date: d, billCount: 0, cover: 0, sales: 0, vat: 0, discount: 0, serviceChg: 0,
-      voucherDiscount: 0,
       typeDineIn: 0, typeTakeHome: 0, typeDelivery: 0,
       ...Object.fromEntries(CHANNELS.map((c) => [c.key, 0])),
       ...Object.fromEntries(extraChannels.map((c) => [c.key, 0])),
@@ -442,21 +460,21 @@ export default function Franchise({ view = 'fcDashboard' }) {
       if (!d) return;
       if (!map.has(d)) map.set(d, blank(d));
       const row = map.get(d);
-      const amt = billAmount(b);
+      // voucher ถือเป็นวิธีจ่าย ไม่ใช่ส่วนลด — บิลที่ใช้ voucher จึงบวกส่วนที่ถูกหักกลับเข้ายอดขาย
+      // ให้เป็น "ยอดขายจริงก่อนใช้ voucher" แล้วเอายอดนั้นไปลงช่องทางจ่าย voucher แทน
+      // (b.voucher ที่ร้านบันทึกเป็นวิธีจ่ายอยู่แล้ว ไม่ต้องบวกกลับ เพราะยอดบิลรวมไว้แล้ว)
+      const amt = billAmount(b) + voucherDiscOf(b);
       row.billCount += 1;
       row.cover += num(b.cover);
       row.sales += amt;
       row.vat += num(b.vat);
-      // voucher แยกไปอยู่ช่องของตัวเอง ไม่นับซ้ำในช่อง "ส่วนลด"
-      // (ช่อง "ส่วนลด" + ช่อง "Voucher" = ส่วนลดทั้งหมดของวันนั้น)
-      if (isVoucherBill(b)) row.voucherDiscount += num(b.discount);
-      else row.discount += num(b.discount);
+      if (!isVoucherBill(b)) row.discount += num(b.discount);
       row.serviceChg += num(b.serviceChg);
       // Dine-in / Take-Home / Delivery = ยอด "ก่อน VAT" ของบิลนั้น — แบบเดียวกับตาราง "ยอดรายวัน"
       // ของเมนู ACC (pages/index.js: net = billTotal - vat แล้ว netSales = dineIn + takeHome + delivery)
       // บิลหนึ่งลงถังเดียว จึงหัก VAT ของบิลนั้นตรง ๆ ได้ ไม่ต้องเฉลี่ย และผลรวมสามช่อง = Net Sales พอดี
       row[orderBucket(b)] += amt - num(b.vat);
-      CHANNELS.forEach((c) => { row[c.key] += num(b[c.key]); });
+      CHANNELS.forEach((c) => { row[c.key] += c.key === 'voucher' ? voucherOf(b) : num(b[c.key]); });
       const extra = extraKeyOf(b);
       if (extra) row[extra.key] += extra.amount;
     });
@@ -486,11 +504,16 @@ export default function Franchise({ view = 'fcDashboard' }) {
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [bills, expenses, isVoucherBill, extraChannels, extraKeyOf]);
+  }, [bills, expenses, isVoucherBill, voucherDiscOf, voucherOf, extraChannels, extraKeyOf]);
 
   /** ช่องทางชำระเงินที่ฐานนี้มีข้อมูลจริง — ช่องที่เป็น 0 ทั้งคอลัมน์ไม่ต้องเอามารก */
   const channelTotals = useMemo(() => {
-    const totals = CHANNELS.map((c) => ({ ...c, value: bills.reduce((s, b) => s + num(b[c.key]), 0) }));
+    // voucher ต้องถามผ่าน voucherOf เหมือนตารางรายวัน ไม่งั้นร้านที่บันทึก voucher เป็นส่วนลด
+    // จะไม่เห็นชิ้น voucher ในกราฟนี้เลย ทั้งที่ตารางรายวันมีช่องนั้นอยู่
+    const totals = CHANNELS.map((c) => ({
+      ...c,
+      value: bills.reduce((s, b) => s + (c.key === 'voucher' ? voucherOf(b) : num(b[c.key])), 0),
+    }));
     const used = totals.filter((t) => t.value > 0);
     // ไม่มีคอลัมน์ช่องทางจ่ายเลย → ถอยไปแจกแจงตาม PaidType ซึ่งเกือบทุก POS มี
     if (!used.length) {
@@ -511,11 +534,13 @@ export default function Franchise({ view = 'fcDashboard' }) {
     const rest = summary.sales - used.reduce((s, t) => s + t.value, 0);
     if (rest > 1) used.push({ key: '_rest', label: 'อื่นๆ / ไม่ระบุช่องทาง', value: rest });
     return used.sort((a, b) => b.value - a.value);
-  }, [bills, summary.sales, extraChannels, extraKeyOf]);
+  }, [bills, summary.sales, voucherOf, extraChannels, extraKeyOf]);
 
+  // ช่องทางจ่ายที่ฐานนี้มียอดจริง — voucher ต้องดูจาก voucherOf ไม่ใช่คอลัมน์ b.voucher อย่างเดียว
+  // ไม่งั้นร้านที่บันทึก voucher เป็นส่วนลด จะไม่เห็นช่อง voucher เลย
   const usedChannels = useMemo(
-    () => CHANNELS.filter((c) => bills.some((b) => num(b[c.key]) !== 0)),
-    [bills]
+    () => CHANNELS.filter((c) => bills.some((b) => (c.key === 'voucher' ? voucherOf(b) : num(b[c.key])) !== 0)),
+    [bills, voucherOf]
   );
 
   /** สรุปตามเมนู — ใช้ทั้งกราฟ "เมนูขายดี" และหน้า "รายละเอียดการขาย" โหมดสรุป */
@@ -838,14 +863,14 @@ export default function Franchise({ view = 'fcDashboard' }) {
     let title = `${colDef.label} · ${row.date}`;
     if (colDef.drill.startsWith('channel:')) {
       const key = colDef.drill.slice(8);
-      fn = (b) => sameDay(b) && num(b[key]) > 0;
+      // voucher มาได้สองทาง (วิธีจ่าย/ส่วนลด) จึงต้องถามผ่าน voucherOf ไม่ใช่ดูคอลัมน์เดียว
+      fn = key === 'voucher'
+        ? (b) => sameDay(b) && voucherOf(b) > 0
+        : (b) => sameDay(b) && num(b[key]) > 0;
     } else if (colDef.drill.startsWith('pay:')) {
       fn = (b) => sameDay(b) && extraKeyOf(b)?.key === colDef.drill;
     } else if (['typeDineIn', 'typeTakeHome', 'typeDelivery'].includes(colDef.drill)) {
       fn = (b) => sameDay(b) && orderBucket(b) === colDef.drill;
-    } else if (colDef.drill === 'voucherDiscount') {
-      // เอาเฉพาะบิลที่มีส่วนลดจริง ไม่งั้นบิลที่พิมพ์คำว่า voucher ไว้เฉย ๆ (ส่วนลด 0) จะโผล่มาด้วย
-      fn = (b) => sameDay(b) && isVoucherBill(b) && num(b.discount) !== 0;
     } else {
       title = `บิลทั้งหมด · ${row.date}`;
     }
@@ -994,6 +1019,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
     const val = (b) => (col === 'billTotal' ? billAmount(b)
       : col === 'cover' ? num(b.cover)
       : col === 'vat' ? num(b.vat)
+      : col === 'preVat' ? preVatOf(b)
       : str(b[col]));
     return [...filteredBills].sort((a, b) => {
       const x = val(a), y = val(b);
@@ -1011,6 +1037,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
     { key: 'paidType', label: 'ชำระโดย', type: 'text' },
     { key: 'cashier', label: 'ผู้ทำรายการ', type: 'text' },
     { key: 'discount', label: 'ส่วนลด', type: 'money' },
+    { key: 'preVat', label: 'รายได้ก่อน VAT', type: 'money' },
     { key: 'vat', label: 'VAT', type: 'money' },
     { key: 'billTotal', label: 'ยอดรวมบิล', type: 'money' },
     { key: 'status', label: 'สถานะ', type: 'text' },
@@ -1019,7 +1046,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
   const reportExport = () => exportRows(reportRows.map((b) => ({
     วันที่: dayOf(b.date), เวลา: timeOf(b.date), เลขที่บิล: str(b.checkId), โต๊ะ: str(b.tableId),
     ประเภท: str(b.orderType), ลูกค้า: num(b.cover), ชำระโดย: str(b.paidType), ผู้ทำรายการ: str(b.cashier),
-    ส่วนลด: num(b.discount), VAT: num(b.vat), ยอดรวมบิล: billAmount(b), สถานะ: str(b.status),
+    ส่วนลด: num(b.discount), 'รายได้ก่อน VAT': preVatOf(b), VAT: num(b.vat), ยอดรวมบิล: billAmount(b), สถานะ: str(b.status),
     จำนวนรายการในบิล: (itemsByBill.get(`${dayOf(b.date)}|${str(b.checkId)}`) || []).length,
   })), 'รายงานยอดขาย', `เฟรนไชส์_รายงานยอดขาย_${rangeLabel}.xlsx`);
 
@@ -1086,6 +1113,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{str(b.paidType) || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{str(b.cashier) || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-right font-mono text-slate-500">{num(b.discount) ? `฿${money(b.discount)}` : '-'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right font-mono">฿{money(preVatOf(b))}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-right font-mono text-slate-500">{num(b.vat) ? `฿${money(b.vat)}` : '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-right font-mono font-bold text-emerald-700">฿{money(billAmount(b))}</td>
                     <td className="px-3 py-2 whitespace-nowrap">
@@ -1104,6 +1132,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
                   <td className="px-3 py-2.5 text-right font-mono">{int(reportRows.reduce((t, b) => t + num(b.cover), 0))}</td>
                   <td className="px-3 py-2.5" colSpan={2} />
                   <td className="px-3 py-2.5 text-right font-mono">฿{money(reportRows.reduce((t, b) => t + num(b.discount), 0))}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">฿{money(reportRows.reduce((t, b) => t + preVatOf(b), 0))}</td>
                   <td className="px-3 py-2.5 text-right font-mono">฿{money(reportRows.reduce((t, b) => t + num(b.vat), 0))}</td>
                   <td className="px-3 py-2.5 text-right font-mono text-emerald-700">฿{money(reportRows.reduce((t, b) => t + billAmount(b), 0))}</td>
                   <td className="px-3 py-2.5" />

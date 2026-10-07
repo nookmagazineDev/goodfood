@@ -1,9 +1,9 @@
 {
   "upstream": "nookmagazineDev/naraipizzeria",
   "ref": "main",
-  "commit": null,
-  "commitDate": null,
-  "syncedAt": "2026-09-10T03:24:30.381Z",
+  "commit": "0612c446afe71eb779237ab8c2ae6123a11c5205",
+  "commitDate": "2026-09-11T07:19:50Z",
+  "syncedAt": "2026-09-13T05:44:23.321Z",
   "files": [
     "components/Franchise.jsx",
     "pages/api/franchise.js",
@@ -19,6 +19,8 @@
     "0002-daily-voucher-discount-column.patch",
     "0003-daily-pos-payment-columns.patch",
     "0004-branch-filter-and-settings.patch",
-    "0005-detect-branch-column.patch"
+    "0005-detect-branch-column.patch",
+    "0006-voucher-as-payment-channel.patch",
+    "0007-report-pre-vat-column.patch"
   ]
 }
