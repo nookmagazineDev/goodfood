@@ -92,6 +92,10 @@ const hasValue = (v) => v !== null && v !== undefined && String(v).trim() !== ''
    ใช้เช็กว่าชื่อวิธีจ่ายของบิลเป็นถังที่รู้จักอยู่แล้วหรือเป็นของใหม่ที่ POS เพิ่งเพิ่มมา */
 const KNOWN_PAY_RE = /cash|เงินสด|qr|promptpay|transfer|โอน|พร้อมเพย์|credit|card|บัตร|voucher|คูปอง|grab|line ?man|delivery|shopee|robinhood|panda/i;
 
+/* รายได้ก่อน VAT ของบิล — ยอดรวมบิลหัก VAT ของบิลนั้น (หน้า "รายงานยอดขาย")
+   ช่องนี้ + ช่อง VAT = ยอดรวมบิล พอดี */
+const preVatOf = (b) => billAmount(b) - num(b.vat);
+
 /* ยอดของบิลที่ไม่ได้ลงช่องทางจ่ายที่รู้จักสักช่อง
    POS เพิ่มวิธีจ่ายใหม่ ฝั่ง SQL จัดไม่เข้าถังไหน ยอดก้อนนั้นจะหายไปจากตาราง
    (อาการคือ Total Sales น้อยกว่า Gross Sales) จึงดึงกลับมาตั้งเป็นคอลัมน์ของตัวเอง
@@ -1015,6 +1019,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
     const val = (b) => (col === 'billTotal' ? billAmount(b)
       : col === 'cover' ? num(b.cover)
       : col === 'vat' ? num(b.vat)
+      : col === 'preVat' ? preVatOf(b)
       : str(b[col]));
     return [...filteredBills].sort((a, b) => {
       const x = val(a), y = val(b);
@@ -1032,6 +1037,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
     { key: 'paidType', label: 'ชำระโดย', type: 'text' },
     { key: 'cashier', label: 'ผู้ทำรายการ', type: 'text' },
     { key: 'discount', label: 'ส่วนลด', type: 'money' },
+    { key: 'preVat', label: 'รายได้ก่อน VAT', type: 'money' },
     { key: 'vat', label: 'VAT', type: 'money' },
     { key: 'billTotal', label: 'ยอดรวมบิล', type: 'money' },
     { key: 'status', label: 'สถานะ', type: 'text' },
@@ -1040,7 +1046,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
   const reportExport = () => exportRows(reportRows.map((b) => ({
     วันที่: dayOf(b.date), เวลา: timeOf(b.date), เลขที่บิล: str(b.checkId), โต๊ะ: str(b.tableId),
     ประเภท: str(b.orderType), ลูกค้า: num(b.cover), ชำระโดย: str(b.paidType), ผู้ทำรายการ: str(b.cashier),
-    ส่วนลด: num(b.discount), VAT: num(b.vat), ยอดรวมบิล: billAmount(b), สถานะ: str(b.status),
+    ส่วนลด: num(b.discount), 'รายได้ก่อน VAT': preVatOf(b), VAT: num(b.vat), ยอดรวมบิล: billAmount(b), สถานะ: str(b.status),
     จำนวนรายการในบิล: (itemsByBill.get(`${dayOf(b.date)}|${str(b.checkId)}`) || []).length,
   })), 'รายงานยอดขาย', `เฟรนไชส์_รายงานยอดขาย_${rangeLabel}.xlsx`);
 
@@ -1107,6 +1113,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{str(b.paidType) || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{str(b.cashier) || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-right font-mono text-slate-500">{num(b.discount) ? `฿${money(b.discount)}` : '-'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right font-mono">฿{money(preVatOf(b))}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-right font-mono text-slate-500">{num(b.vat) ? `฿${money(b.vat)}` : '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-right font-mono font-bold text-emerald-700">฿{money(billAmount(b))}</td>
                     <td className="px-3 py-2 whitespace-nowrap">
@@ -1125,6 +1132,7 @@ export default function Franchise({ view = 'fcDashboard' }) {
                   <td className="px-3 py-2.5 text-right font-mono">{int(reportRows.reduce((t, b) => t + num(b.cover), 0))}</td>
                   <td className="px-3 py-2.5" colSpan={2} />
                   <td className="px-3 py-2.5 text-right font-mono">฿{money(reportRows.reduce((t, b) => t + num(b.discount), 0))}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">฿{money(reportRows.reduce((t, b) => t + preVatOf(b), 0))}</td>
                   <td className="px-3 py-2.5 text-right font-mono">฿{money(reportRows.reduce((t, b) => t + num(b.vat), 0))}</td>
                   <td className="px-3 py-2.5 text-right font-mono text-emerald-700">฿{money(reportRows.reduce((t, b) => t + billAmount(b), 0))}</td>
                   <td className="px-3 py-2.5" />
