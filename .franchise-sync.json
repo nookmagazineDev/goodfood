@@ -1,9 +1,9 @@
 {
   "upstream": "nookmagazineDev/naraipizzeria",
   "ref": "main",
-  "commit": "0612c446afe71eb779237ab8c2ae6123a11c5205",
-  "commitDate": "2026-09-11T07:19:50Z",
-  "syncedAt": "2026-09-13T05:44:23.321Z",
+  "commit": "69458eafc6bdfad31d986799749aea2c3971c066",
+  "commitDate": "2026-10-12T03:51:50Z",
+  "syncedAt": "2026-10-13T07:27:43.135Z",
   "files": [
     "components/Franchise.jsx",
     "pages/api/franchise.js",
